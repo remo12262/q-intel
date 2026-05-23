@@ -1,0 +1,28 @@
+services:
+  # Backend FastAPI
+  - type: web
+    name: q-intel-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DB_PATH
+        value: /data/q_intel.db
+    disk:
+      name: q-intel-data
+      mountPath: /data
+      sizeGB: 1
+
+  # Frontend React
+  - type: web
+    name: q-intel-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false

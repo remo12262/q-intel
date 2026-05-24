@@ -73,6 +73,7 @@ class GraphDB:
             ("enisa_eu",   "ENISA",              "GovernmentAgency","quantum","EU", "EU Agency for Cybersecurity. Pubblica linee guida NIS2 e quantum readiness.", 10),
             ("bis_us",     "BIS / DOC",          "GovernmentAgency","quantum","US", "Bureau of Industry and Security. Gestisce export controls chip avanzati.", 15),
             ("acn_it",     "ACN Italia",         "GovernmentAgency","quantum","IT", "Agenzia per la Cybersicurezza Nazionale. Punto di riferimento NIS2 in Italia.", 10),
+            ("cisa_us",    "CISA",               "GovernmentAgency","quantum","US", "Cybersecurity and Infrastructure Security Agency. Publishes KEV catalog of actively exploited vulnerabilities.", 10),
             ("softbank",   "SoftBank",           "InvestorInst",   "quantum", "JP", "Vision Fund. Investitore globale AI/chip. Partecipazioni strategiche.", 40),
             ("sequoia_cn", "Sequoia China",      "InvestorInst",   "quantum", "CN", "Braccio cinese Sequoia Capital. Investe in AI e semiconduttori cinesi.", 70),
             ("arm",        "ARM Holdings",       "TechCompany",    "quantum", "UK", "Designer architetture CPU/GPU. Licenze a quasi tutti i produttori chip.", 35),

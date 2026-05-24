@@ -1,69 +1,65 @@
 import anthropic
 import json
 import os
+import re
 from typing import Dict, List
 
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-SYSTEM_PROMPT = """Sei un sistema di intelligence per la sicurezza AI e quantum computing.
-Il tuo compito è estrarre entità e relazioni da testi per costruire un knowledge graph.
+SYSTEM_PROMPT = """You are a quantum and cybersecurity threat intelligence analyst.
+Extract entities and relationships from vulnerability and security texts to build a knowledge graph.
 
-Tipi di entità:
-- TechCompany: aziende tech, chip maker, AI companies
-- GovernmentAgency: agenzie governative, ministeri, enti regolatori
-- Person: CEO, ricercatori, policy maker
-- InvestorInstitution: fondi, venture capital, banche statali
-- Organization: organizzazioni, consorzi, alleanze
-- PolicyMaker: decisori politici, parlamentari
-- MediaOutlet: media, giornali, riviste
+Entity types:
+- Vulnerability: CVE identifiers and security flaws
+- Software: software products, libraries, frameworks, hardware
+- TechCompany: technology companies, chip makers, hardware vendors
+- GovernmentAgency: government agencies, regulatory bodies (NIST, CISA, ENISA)
+- Organization: standards bodies, consortia, alliances
 
-Tipi di relazione:
-- FINANZIA: A finanzia B
-- CONTROLLA: A controlla B
-- COLLABORA_CON: A collabora con B
-- RISCHIO_PER: A rappresenta un rischio per B
-- MEMBRO_DI: A è membro di B
-- REGOLA: A regola B
-- PRODUCE: A produce B
-- INVESTE_IN: A investe in B
-- COLLEGATO_A: A è collegato a B
+Relationship types:
+- AFFECTS: vulnerability affects a software or product
+- EXPLOITS: attack vector exploits a vulnerability
+- MITIGATES: entity or patch mitigates a vulnerability
+- PRODUCES: company produces a software or hardware product
+- REGULATES: agency regulates an entity or standard
+- RELATED_TO: general association
 
-Per ogni relazione calcola un risk_score da 0 a 100:
-- 0-30: basso rischio
-- 31-60: rischio moderato
-- 61-80: rischio alto
-- 81-100: rischio critico
+For each relationship, compute a risk_score 0-100:
+- 0-30: low risk
+- 31-60: moderate risk
+- 61-80: high risk
+- 81-100: critical risk
 
-Rischio alto se coinvolge stati avversari (Cina, Russia, Iran, Corea del Nord),
-catene di fornitura critiche, vulnerabilità crittografiche, elusione sanzioni.
+Higher risk for: cryptographic weaknesses, quantum-vulnerable algorithms (RSA, ECC, DH),
+actively exploited CVEs, post-quantum migration gaps, supply chain exposure.
 
-Rispondi SOLO con JSON valido, nessun testo extra."""
+Respond ONLY with valid JSON, no extra text."""
 
-EXTRACT_PROMPT = """Analizza questo testo ed estrai entità e relazioni.
+EXTRACT_PROMPT = """Analyze this cybersecurity text and extract entities and relationships.
 
-Testo:
+Text:
 {text}
 
-Rispondi con questo JSON esatto:
+Respond with this exact JSON:
 {{
   "entities": [
     {{
-      "id": "slug_univoco",
-      "label": "Nome Entità",
-      "type": "TipoEntità",
-      "country": "IT/US/CN/etc o null",
-      "description": "breve descrizione",
-      "risk_score": 0-100
+      "id": "unique_slug",
+      "label": "Entity Name",
+      "type": "EntityType",
+      "country": "US/EU/CN/etc or null",
+      "description": "brief description",
+      "risk_score": 0
     }}
   ],
   "relations": [
     {{
-      "source": "id_entità_1",
-      "target": "id_entità_2",
-      "type": "TIPO_RELAZIONE",
-      "fact": "descrizione concisa della relazione",
-      "risk_score": 0-100,
-      "date": "YYYY-MM o null"
+      "source": "entity_id_1",
+      "target": "entity_id_2",
+      "type": "RELATION_TYPE",
+      "fact": "concise description of the relationship",
+      "risk_score": 0,
+      "date": "YYYY-MM or null"
     }}
   ]
 }}"""
@@ -72,16 +68,122 @@ Rispondi con questo JSON esatto:
 class EntityExtractor:
 
     def _make_slug(self, text: str) -> str:
-        import re
-        return re.sub(r'[^a-z0-9_]', '', text.lower().replace(' ', '_'))[:32]
+        return re.sub(r'[^a-z0-9_]', '', text.lower().replace(' ', '_').replace('-', '_'))[:32]
+
+    def _cvss_to_risk(self, cvss_score: float, severity: str) -> int:
+        if cvss_score > 0:
+            return min(100, int(cvss_score * 10))
+        severity_map = {"CRITICAL": 90, "HIGH": 70, "MEDIUM": 50, "LOW": 25, "UNKNOWN": 30}
+        return severity_map.get(severity.upper(), 30)
+
+    def process_cves(self, cves: List[Dict]) -> Dict:
+        """Convert NVD CVE data directly into graph entities (no Claude required)."""
+        entities: Dict[str, Dict] = {}
+        relations: List[Dict] = []
+
+        for cve in cves:
+            cve_id = cve.get("id")
+            if not cve_id:
+                continue
+
+            risk_score = self._cvss_to_risk(cve.get("cvss_score", 0), cve.get("severity", "UNKNOWN"))
+            cve_slug = self._make_slug(cve_id)
+
+            entities[cve_slug] = {
+                "id": cve_slug,
+                "label": cve_id,
+                "type": "Vulnerability",
+                "country": None,
+                "description": cve.get("description", "")[:300],
+                "risk_score": risk_score,
+            }
+
+            for product_str in cve.get("affected_products", []):
+                parts = product_str.split(":")
+                vendor = parts[0].replace("_", " ").title() if parts else ""
+                product = parts[1].replace("_", " ").title() if len(parts) > 1 else ""
+                label = f"{vendor} {product}".strip() or product_str
+                pid = self._make_slug(label)
+
+                if pid not in entities:
+                    entities[pid] = {
+                        "id": pid,
+                        "label": label,
+                        "type": "Software",
+                        "country": None,
+                        "description": "Product affected by quantum/cryptographic vulnerabilities.",
+                        "risk_score": 0,
+                    }
+                entities[pid]["risk_score"] = max(entities[pid]["risk_score"], risk_score // 2)
+
+                relations.append({
+                    "source": cve_slug,
+                    "target": pid,
+                    "type": "AFFECTS",
+                    "fact": f"{cve_id} ({cve.get('severity', 'UNKNOWN')}, CVSS {cve.get('cvss_score', 'N/A')}) affects {label}.",
+                    "risk_score": risk_score,
+                    "date": cve.get("published", "")[:7] or None,
+                })
+
+        return {"entities": list(entities.values()), "relations": relations}
+
+    def process_kev(self, kev_entries: List[Dict]) -> Dict:
+        """Convert CISA KEV entries into graph entities (no Claude required)."""
+        entities: Dict[str, Dict] = {}
+        relations: List[Dict] = []
+
+        for entry in kev_entries:
+            cve_id = entry.get("id")
+            if not cve_id:
+                continue
+
+            ransomware = entry.get("known_ransomware", "Unknown")
+            risk_score = 95 if ransomware not in ("Unknown", "No Known") else 80
+            cve_slug = self._make_slug(cve_id)
+
+            entities[cve_slug] = {
+                "id": cve_slug,
+                "label": cve_id,
+                "type": "Vulnerability",
+                "country": None,
+                "description": f"[CISA KEV] {entry.get('name', '')}. {entry.get('description', '')}".strip()[:300],
+                "risk_score": risk_score,
+            }
+
+            vendor = entry.get("vendor", "")
+            product = entry.get("product", "")
+            if vendor or product:
+                label = f"{vendor} {product}".strip()
+                pid = self._make_slug(label)
+                if pid not in entities:
+                    entities[pid] = {
+                        "id": pid,
+                        "label": label,
+                        "type": "Software",
+                        "country": None,
+                        "description": f"{vendor} product with CISA-confirmed active exploitation.",
+                        "risk_score": risk_score // 2,
+                    }
+                entities[pid]["risk_score"] = max(entities[pid]["risk_score"], risk_score // 2)
+
+                relations.append({
+                    "source": cve_slug,
+                    "target": pid,
+                    "type": "AFFECTS",
+                    "fact": f"{cve_id} actively exploited in {label}. Action: {entry.get('required_action', '')}",
+                    "risk_score": risk_score,
+                    "date": entry.get("date_added", "")[:7] or None,
+                })
+
+        return {"entities": list(entities.values()), "relations": relations}
 
     async def extract(self, text: str, source_id: str = "") -> Dict:
-        """Extract entities and relations from text using Claude."""
+        """Extract entities and relations from text using Claude claude-sonnet-4-6."""
         if not text or len(text.strip()) < 50:
             return {"entities": [], "relations": []}
         try:
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=2000,
                 system=SYSTEM_PROMPT,
                 messages=[{
@@ -90,13 +192,11 @@ class EntityExtractor:
                 }]
             )
             raw = message.content[0].text.strip()
-            # Clean markdown fences if present
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
                     raw = raw[4:]
             result = json.loads(raw)
-            # Normalize IDs
             for e in result.get("entities", []):
                 if not e.get("id"):
                     e["id"] = self._make_slug(e.get("label", "unknown"))
@@ -118,7 +218,7 @@ class EntityExtractor:
                 item.get(text_field, "") + " " + item.get("title", ""),
                 source_id=item.get("id", "")
             )
-            for item in items[:10]  # limit to avoid rate limits
+            for item in items[:10]
         ]
         results = await asyncio.gather(*tasks)
 
@@ -128,54 +228,54 @@ class EntityExtractor:
                 if eid not in all_entities:
                     all_entities[eid] = entity
                 else:
-                    # Merge: keep higher risk score
-                    existing = all_entities[eid]
-                    existing["risk_score"] = max(
-                        existing.get("risk_score", 0),
+                    all_entities[eid]["risk_score"] = max(
+                        all_entities[eid].get("risk_score", 0),
                         entity.get("risk_score", 0)
                     )
             all_relations.extend(result.get("relations", []))
 
-        return {
-            "entities": list(all_entities.values()),
-            "relations": all_relations,
-        }
+        return {"entities": list(all_entities.values()), "relations": all_relations}
 
     async def generate_alerts(self, entities: List[Dict], relations: List[Dict]) -> List[Dict]:
-        """Use Claude to generate predictive risk alerts from the graph."""
+        """Use Claude claude-sonnet-4-6 to generate predictive risk alerts from the graph."""
         if not entities:
             return []
 
         graph_summary = json.dumps({
-            "high_risk_entities": [e for e in entities if e.get("risk_score", 0) > 60][:10],
+            "high_risk_vulnerabilities": [
+                e for e in entities if e.get("type") == "Vulnerability" and e.get("risk_score", 0) > 60
+            ][:10],
+            "high_risk_entities": [
+                e for e in entities if e.get("type") != "Vulnerability" and e.get("risk_score", 0) > 60
+            ][:5],
             "high_risk_relations": [r for r in relations if r.get("risk_score", 0) > 60][:10],
         }, indent=2)
 
         try:
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1500,
                 messages=[{
                     "role": "user",
-                    "content": f"""Analizza questo knowledge graph di sicurezza AI/quantum e genera alert predittivi.
+                    "content": f"""Analyze this quantum/cryptography security knowledge graph and generate predictive risk alerts.
 
 {graph_summary}
 
-Genera 3-5 alert predittivi in formato JSON:
+Generate 3-5 predictive alerts as JSON:
 [
   {{
     "id": "alert_slug",
-    "title": "Titolo breve alert",
-    "description": "Descrizione dettagliata del rischio e previsione",
+    "title": "Short alert title",
+    "description": "Detailed risk description and prediction",
     "severity": "CRITICAL|HIGH|MEDIUM|LOW",
     "entities_involved": ["id1", "id2"],
-    "predicted_impact": "descrizione impatto atteso",
-    "timeframe": "es. 3-6 mesi",
-    "recommendation": "azione consigliata"
+    "predicted_impact": "description of expected impact",
+    "timeframe": "e.g. 3-6 months",
+    "recommendation": "recommended action"
   }}
 ]
 
-Rispondi SOLO con JSON valido."""
+Respond ONLY with valid JSON."""
                 }]
             )
             raw = message.content[0].text.strip()

@@ -3,14 +3,16 @@ import { useState, useEffect, useRef, useCallback } from "react"
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 const NODE_COLORS = {
+  Vulnerability:   "#E24B4A",
+  Software:        "#9B59B6",
   TechCompany:     "#7F77DD",
   GovernmentAgency:"#1D9E75",
-  HealthOrg:       "#D85A30",
-  PolicyMaker:     "#378ADD",
-  InvestorInst:    "#BA7517",
-  MediaOutlet:     "#A32D2D",
   Organization:    "#888780",
+  InvestorInst:    "#BA7517",
   Person:          "#D4537E",
+  PolicyMaker:     "#378ADD",
+  MediaOutlet:     "#A32D2D",
+  HealthOrg:       "#D85A30",
 }
 
 const SEVERITY_COLOR = {

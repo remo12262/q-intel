@@ -9,8 +9,6 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: DB_PATH
-        value: /data/q_intel.db
 
   # Frontend React
   - type: web

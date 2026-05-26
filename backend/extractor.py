@@ -192,7 +192,14 @@ class EntityExtractor:
                     "content": EXTRACT_PROMPT.format(text=text[:3000])
                 }]
             )
-            raw = next((b.text for b in message.content if hasattr(b, "text")), "").strip()
+            raw = ""
+            for block in message.content:
+                if hasattr(block, "text") and block.text.strip().startswith("["):
+                    raw = block.text.strip()
+                    break
+                elif hasattr(block, "text") and block.text.strip().startswith("{"):
+                    raw = block.text.strip()
+                    break
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
@@ -280,7 +287,14 @@ Generate 3-5 predictive alerts as JSON:
 Respond ONLY with valid JSON."""
                 }]
             )
-            raw = next((b.text for b in message.content if hasattr(b, "text")), "").strip()
+            raw = ""
+            for block in message.content:
+                if hasattr(block, "text") and block.text.strip().startswith("["):
+                    raw = block.text.strip()
+                    break
+                elif hasattr(block, "text") and block.text.strip().startswith("{"):
+                    raw = block.text.strip()
+                    break
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
